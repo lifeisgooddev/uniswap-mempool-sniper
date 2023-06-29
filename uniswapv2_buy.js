@@ -12,13 +12,10 @@ const pcsAbi = new ethers.Interface(require("./abi.json"));
 
 const token = process.env.TARGET_TOKEN;
 
-// ERC20 ABI
-const abiERC20 = ["function decimals() view returns (uint8)", "function symbol() view returns (string)"];
-
 const tokens = {
-  router: "0xE592427A0AEce92De3Edee1F18E0157C05861564", // uniswapV3Router
+  router: "0x10ED43C718714eb63d5aA57B78B54704E256024E",
   purchaseAmount: process.env.PURCHASEAMOUNT || "0.01",
-  pair: ["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", token], // trading pair, WETH/<quote>
+  pair: ["0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", token],
   GASLIMIT: process.env.GASLIMIT || "1000000",
   GASPRICE: process.env.GASPRICE || "5",
   buyDelay: 1,
@@ -41,7 +38,7 @@ let router;
 let grasshopper;
 
 const GLOBAL_CONFIG = {
-  NODE_WSS: process.env.NODE_WSS,
+  NODE_WSS: process.env.NODE_WSS || "wss://bsc-ws-node.nariox.org:443",
   PRIVATE_KEY: process.env.PRIVATE_KEY,
   RECIPIENT: process.env.RECIPIENT,
 };
@@ -75,9 +72,9 @@ const startConnection = () => {
     console.log(`Sniping has started. Watching the txpool for events for token ${token}...`);
     tokens.router = ethers.getAddress(tokens.router);
     keepAliveInterval = setInterval(() => {
-      provider.websocket.ping();
+      provider._websocket.ping();
       pingTimeout = setTimeout(() => {
-        provider.websocket.terminate();
+        provider._websocket.terminate();
       }, EXPECTED_PONG_BACK);
     }, KEEP_ALIVE_CHECK_INTERVAL);
 
@@ -91,58 +88,17 @@ const startConnection = () => {
           }
           if (tx && tx.to) {
             if (tx.to === tokens.router) {
-              // const re1 = new RegExp("^0xf305d719");
-              // if (re1.test(tx.data)) {
-              //   const decodedInput = pcsAbi.parseTransaction({
-              //     data: tx.data,
-              //     value: tx.value,
-              //   });
-              //   console.log(decodedInput);
-              //   if (ethers.getAddress(pair[1]) === decodedInput.args[0]) {
-              //     provider.off("pending");
-              //     await Wait(tokens.buyDelay);
-              //     await BuyToken(tx);
-              //   }
-              // }
-              // Get data slice in Hex
-              const dataSlice = ethers.hexDataSlice(tx.data, 4);
-
-              // Ensure desired data length
-              if (tx.data.length === 522) {
-                // Decode data
-                const decoded = ethers.defaultAbiCoder.decode(
-                  ["address", "address", "uint24", "address", "uint256", "uint256", "uint256", "uint160"],
-                  dataSlice
-                );
-
-                // Log decoded data
-                console.log("");
-                console.log("Open Transaction: ", tx.hash);
-                console.log(decoded);
-
-                // Interpret data - Contracts
-                const contract0 = new ethers.Contract(decoded[0], abiERC20, provider);
-                const contract1 = new ethers.Contract(decoded[1], abiERC20, provider);
-
-                // Interpret data - Symbols
-                const symbol0 = await contract0.symbol();
-                const symbol1 = await contract1.symbol();
-
-                // Interpret data - Decimals
-                const decimals0 = await contract0.decimals();
-                const decimals1 = await contract1.decimals();
-
-                // Interpret data - Values
-                const amountOut = Number(ethers.utils.formatUnits(decoded[5], decimals1));
-
-                // Interpret data - Values
-                const amountInMax = Number(ethers.utils.formatUnits(decoded[6], decimals0));
-
-                // Readout
-                console.log("symbol0: ", symbol0, decimals0);
-                console.log("symbol1: ", symbol1, decimals1);
-                console.log("amountOut: ", amountOut);
-                console.log("amountInMax: ", amountInMax);
+              const re1 = new RegExp("^0xf305d719");
+              if (re1.test(tx.data)) {
+                const decodedInput = pcsAbi.parseTransaction({
+                  data: tx.data,
+                  value: tx.value,
+                });
+                if (ethers.getAddress(pair[1]) === decodedInput.args[0]) {
+                  provider.off("pending");
+                  await Wait(tokens.buyDelay);
+                  await BuyToken(tx);
+                }
               }
             }
           }
@@ -158,12 +114,12 @@ const startConnection = () => {
     startConnection();
   });
 
-  provider.websocket.on("error", () => {
-    console.log("Error. Attemptiing to Reconnect...");
-    clearInterval(keepAliveInterval);
-    clearTimeout(pingTimeout);
-    startConnection();
-  });
+  // provider.websocket.on("error", () => {
+  //   console.log("Error. Attemptiing to Reconnect...");
+  //   clearInterval(keepAliveInterval);
+  //   clearTimeout(pingTimeout);
+  //   startConnection();
+  // });
 
   provider.websocket.on("pong", () => {
     clearInterval(pingTimeout);
