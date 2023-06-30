@@ -94,7 +94,7 @@ const startConnection = () => {
   grasshopper = 0;
 
   provider.websocket.on("open", () => {
-    console.log(`Sniping has started. Watching the txpool for events for token ${token}...`);
+    console.log(`Sniping has started. Watching the mempool for events for token ${token}...`);
     tokens.router = ethers.getAddress(tokens.router);
     keepAliveInterval = setInterval(() => {
       provider.websocket.ping();
