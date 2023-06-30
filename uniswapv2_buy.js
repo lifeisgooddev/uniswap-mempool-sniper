@@ -114,12 +114,12 @@ const startConnection = () => {
     startConnection();
   });
 
-  // provider.websocket.on("error", () => {
-  //   console.log("Error. Attemptiing to Reconnect...");
-  //   clearInterval(keepAliveInterval);
-  //   clearTimeout(pingTimeout);
-  //   startConnection();
-  // });
+  provider.websocket.on("error", () => {
+    console.log("Error. Attemptiing to Reconnect...");
+    clearInterval(keepAliveInterval);
+    clearTimeout(pingTimeout);
+    startConnection();
+  });
 
   provider.websocket.on("pong", () => {
     clearInterval(pingTimeout);
