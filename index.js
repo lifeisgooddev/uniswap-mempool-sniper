@@ -5,9 +5,11 @@ if (result.error) {
   throw result.error;
 }
 const ethers = require("ethers");
+const { BigNumber } = require("@ethersproject/bignumber");
 
 const token = process.env.TARGET_TOKEN;
 
+const { abi: Quoter } = require("@uniswap/v3-periphery/artifacts/contracts/lens/Quoter.sol/Quoter.json");
 const { abi: QuoterV2ABI } = require("@uniswap/v3-periphery/artifacts/contracts/lens/QuoterV2.sol/QuoterV2.json");
 const { abi: PoolABI } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json");
 const { abi: FactoryABI } = require("@uniswap/v3-core/artifacts/contracts/UniswapV3Factory.sol/UniswapV3Factory.json");
@@ -28,7 +30,7 @@ function sqrtToPrice(sqrt, decimals0, decimals1, token0IsInput = true) {
   const numerator = sqrt ** 2;
   const denominator = 2 ** 192;
   let ratio = numerator / denominator;
-  const shiftDecimals = Math.pow(10, decimals0 - decimals1);
+  const shiftDecimals = Math.pow(10, Number(decimals0) - Number(decimals1));
   ratio *= shiftDecimals;
   if (!token0IsInput) {
     ratio = 1 / ratio;
@@ -99,14 +101,12 @@ const startConnection = () => {
               try {
                 // Get data slice in Hex
                 const dataSlice = ethers.dataSlice(tx.data, 4);
-                console.log(tx);
-                console.log(tx.data.length);
 
                 // Ensure desired data length, 522 meaning buy tx, 1162 meaning sell tx
                 if (tx.data.length === 522) {
                   const abiCoder = new ethers.AbiCoder();
                   // Decode data
-                  // tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, deadline
+                  // first param: [tokenIn, tokenOut, fee, recipient, amountIn, amountOutMinimum, deadline]
                   const decoded = abiCoder.decode(
                     ["address", "address", "uint24", "address", "uint256", "uint256", "uint256", "uint160"],
                     dataSlice
@@ -116,10 +116,11 @@ const startConnection = () => {
                   //   return ;
                   // }
 
-                  // token_in, token_out, fee
+                  // params: token_in, token_out, fee
                   const poolAddress = await factory.getPool(decoded[0], decoded[1], decoded[2]);
-                  console.log(poolAddress);
-                  const poolContract = new ethers.Contract(poolAddress, PoolABI, jsonProvider);
+                  console.log(`${tx.data.length === 522 ? "Buy" : "Sell"} transaction dected`);
+                  console.log("detected Pool address: ", poolAddress);
+                  const poolContract = new ethers.Contract(poolAddress, PoolABI, provider);
                   const slot0 = await poolContract.slot0();
                   const sqrtPriceX96 = slot0.sqrtPriceX96;
 
@@ -132,21 +133,19 @@ const startConnection = () => {
                   const tokenOutAbi = getAbi(decoded[1]);
 
                   // Log decoded data
-                  console.log("");
                   console.log("Open Transaction: ", tx.hash);
                   console.log(decoded);
 
-                  const tokenInContract = new ethers.Contract(decoded[0], tokenInAbi, jsonProvider);
-                  const tokenOutContract = new ethers.Contract(decoded[1], tokenOutAbi, jsonProvider);
+                  const tokenInContract = new ethers.Contract(decoded[0], tokenInAbi, provider);
+                  const tokenOutContract = new ethers.Contract(decoded[1], tokenOutAbi, provider);
 
                   const decimalsIn = await tokenInContract.decimals();
                   const decimalsOut = await tokenOutContract.decimals();
 
-                  const amountOut = Number(ethers.utils.formatUnits(decoded[5], decimalsOut));
-                  const amountInMax = Number(ethers.utils.formatUnits(decoded[6], decimalsIn));
+                  const amountOut = Number(ethers.formatUnits(decoded[5], decimalsOut));
+                  const amountInMax = Number(ethers.formatUnits(decoded[6], decimalsIn));
 
-                  const quoter = new ethers.Contract(QUOTER2_ADDRESS, QuoterV2ABI, jsonProvider);
-
+                  const quoter = new ethers.Contract(QUOTER2_ADDRESS, QuoterV2ABI, provider);
                   const params = {
                     tokenIn: decoded[0],
                     tokenOut: decoded[1],
@@ -154,11 +153,21 @@ const startConnection = () => {
                     amountIn: decoded[4],
                     sqrtPriceLimitX96: "0",
                   };
-                  const quote = await quoter.callStatic.quoteExactInputSingle(params);
+                  const quote = await quoter.getFunction("quoteExactInputSingle").staticCall(params);
                   const sqrtPriceX96After = quote.sqrtPriceX96After;
 
-                  const price = sqrtToPrice(sqrtPriceX96, decimalsIn, decimalsOut, token0IsInput);
-                  const priceAfter = sqrtToPrice(sqrtPriceX96After, decimalsIn, decimalsOut, token0IsInput);
+                  const price = sqrtToPrice(
+                    parseFloat(ethers.formatEther(sqrtPriceX96)),
+                    decimalsIn,
+                    decimalsOut,
+                    token0IsInput
+                  );
+                  const priceAfter = sqrtToPrice(
+                    parseFloat(ethers.formatEther(sqrtPriceX96After)),
+                    decimalsIn,
+                    decimalsOut,
+                    token0IsInput
+                  );
 
                   console.log("price", price);
                   console.log("priceAfter", priceAfter);
